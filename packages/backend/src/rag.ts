@@ -20,6 +20,10 @@ export interface RAGConfig {
   topK?: number
 }
 
+// Default configurations
+const DEFAULT_MODEL = 'gpt-4-turbo-preview'
+const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
+
 export interface RAGQuery {
   query: string
   topK?: number
@@ -43,8 +47,8 @@ export class RAGSystem {
 
   constructor(config: RAGConfig) {
     this.config = {
-      model: config.model || 'gpt-4-turbo-preview',
-      embeddingModel: config.embeddingModel || 'text-embedding-3-small',
+      model: config.model || DEFAULT_MODEL,
+      embeddingModel: config.embeddingModel || DEFAULT_EMBEDDING_MODEL,
       chunkSize: config.chunkSize || 1000,
       chunkOverlap: config.chunkOverlap || 200,
       topK: config.topK || 4,

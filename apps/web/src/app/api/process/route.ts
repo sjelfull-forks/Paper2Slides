@@ -12,7 +12,7 @@ import fs from 'fs'
 export const runtime = 'nodejs'
 export const maxDuration = 300 // 5 minutes
 
-const UPLOAD_DIR = path.join(process.cwd(), '../../sources/uploads')
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), '../../sources/uploads')
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,13 +26,24 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Validate OpenAI API key
+    if (!process.env.OPENAI_API_KEY) {
+      return new Response(
+        JSON.stringify({ error: 'OpenAI API key not configured' }),
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
     const sessionDir = path.join(UPLOAD_DIR, sessionId)
     
     // Initialize processors
     const parser = new DocumentParser()
     const ragSystem = new RAGSystem({
-      openaiApiKey: process.env.OPENAI_API_KEY!,
-      model: 'gpt-4-turbo-preview',
+      openaiApiKey: process.env.OPENAI_API_KEY,
+      model: config.model || 'gpt-4-turbo-preview',
       chunkSize: 1000,
       chunkOverlap: 200,
     })

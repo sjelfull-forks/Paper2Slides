@@ -28,7 +28,11 @@ export interface SlideConfig {
   length: 'short' | 'medium' | 'long'
   outputType: 'slides' | 'poster'
   fastMode: boolean
+  model?: string // Optional: specify which model to use
 }
+
+// Default model for slide generation
+const DEFAULT_SLIDE_MODEL = 'gpt-4-turbo-preview'
 
 export interface SlideContent {
   slideNumber: number
@@ -121,7 +125,7 @@ For each slide, provide:
 Format as JSON array.`
 
     const { text } = await generateText({
-      model: openai('gpt-4-turbo-preview'),
+      model: openai(config.model || DEFAULT_SLIDE_MODEL),
       prompt,
       temperature: 0.7,
     })
@@ -172,10 +176,11 @@ Format as JSON array.`
    * Generate slide content with AI SDK streaming
    */
   async *generateSlideContentStream(
-    slidePrompt: string
+    slidePrompt: string,
+    model?: string
   ): AsyncGenerator<string> {
     const { textStream } = await streamText({
-      model: openai('gpt-4-turbo-preview'),
+      model: openai(model || DEFAULT_SLIDE_MODEL),
       prompt: slidePrompt,
       temperature: 0.7,
     })
