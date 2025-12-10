@@ -1,0 +1,71 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: paper2slides-postgres
+    environment:
+      POSTGRES_USER: paper2slides
+      POSTGRES_PASSWORD: paper2slides_dev
+      POSTGRES_DB: paper2slides
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paper2slides"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Python Backend (FastAPI)
+  python-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    container_name: paper2slides-backend
+    environment:
+      - DATABASE_URL=postgresql://paper2slides:paper2slides_dev@postgres:5432/paper2slides
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./paper2slides:/app/paper2slides
+      - ./api:/app/api
+      - ./sources:/app/sources
+      - ./outputs:/app/outputs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
+
+  # Next.js Web Application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: paper2slides-web
+    environment:
+      - DATABASE_URL=postgresql://paper2slides:paper2slides_dev@postgres:5432/paper2slides
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHON_BACKEND_URL=http://python-backend:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./packages:/app/packages
+      - /app/apps/web/node_modules
+      - /app/apps/web/.next
+      - /app/node_modules
+    depends_on:
+      - postgres
+      - python-backend
+    command: pnpm --filter=web dev
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: paper2slides-network
