@@ -53,7 +53,7 @@ export class PaperProcessor {
   }
 
   /**
-   * Summarize a paper document using Mastra agent
+   * Summarize a paper document
    */
   async summarizePaper(doc: ParsedDocument): Promise<PaperSummary> {
     // Index document in RAG
@@ -105,7 +105,7 @@ export class PaperProcessor {
   }
 
   /**
-   * Generate slide plan from paper summary using Mastra agent
+   * Generate slide plan from paper summary
    */
   async generateSlidePlan(
     summary: PaperSummary,

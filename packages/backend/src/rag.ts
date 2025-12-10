@@ -41,6 +41,18 @@ interface DocumentChunk {
   embedding?: number[]
 }
 
+interface OpenAIEmbeddingResponse {
+  data: Array<{
+    embedding: number[]
+    index: number
+  }>
+  model: string
+  usage: {
+    prompt_tokens: number
+    total_tokens: number
+  }
+}
+
 export class RAGSystem {
   private config: Required<RAGConfig>
   private documents: DocumentChunk[] = []
@@ -61,14 +73,26 @@ export class RAGSystem {
    * Split text into chunks
    */
   private splitIntoChunks(text: string): string[] {
+    if (!text || text.length === 0) {
+      return []
+    }
+
     const chunks: string[] = []
     const { chunkSize, chunkOverlap } = this.config
+
+    // Validate configuration
+    if (chunkOverlap >= chunkSize) {
+      throw new Error('chunkOverlap must be less than chunkSize')
+    }
 
     let start = 0
     while (start < text.length) {
       const end = Math.min(start + chunkSize, text.length)
       chunks.push(text.slice(start, end))
       start += chunkSize - chunkOverlap
+
+      // Safety check to prevent infinite loops
+      if (start <= 0) break
     }
 
     return chunks
@@ -95,7 +119,7 @@ export class RAGSystem {
         throw new Error(`Embedding API error: ${response.statusText}`)
       }
 
-      const data: any = await response.json()
+      const data = (await response.json()) as OpenAIEmbeddingResponse
       return data.data[0].embedding
     } catch (error) {
       console.error('Error generating embedding:', error)
@@ -107,9 +131,19 @@ export class RAGSystem {
    * Calculate cosine similarity between two vectors
    */
   private cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length) {
+      throw new Error('Vectors must have the same length')
+    }
+
     const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0)
     const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0))
     const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0))
+
+    // Handle zero magnitude case
+    if (magnitudeA === 0 || magnitudeB === 0) {
+      return 0
+    }
+
     return dotProduct / (magnitudeA * magnitudeB)
   }
 
@@ -146,10 +180,15 @@ export class RAGSystem {
     const queryEmbedding = await this.generateEmbedding(query.query)
 
     const results = this.documents
-      .map((doc) => ({
-        ...doc,
-        score: this.cosineSimilarity(queryEmbedding, doc.embedding!),
-      }))
+      .map((doc) => {
+        if (!doc.embedding) {
+          throw new Error('Document missing embedding')
+        }
+        return {
+          ...doc,
+          score: this.cosineSimilarity(queryEmbedding, doc.embedding),
+        }
+      })
       .sort((a, b) => b.score - a.score)
       .slice(0, topK)
 
@@ -194,10 +233,15 @@ Answer:`
     const queryEmbedding = await this.generateEmbedding(query.query)
 
     const results = this.documents
-      .map((doc) => ({
-        ...doc,
-        score: this.cosineSimilarity(queryEmbedding, doc.embedding!),
-      }))
+      .map((doc) => {
+        if (!doc.embedding) {
+          throw new Error('Document missing embedding')
+        }
+        return {
+          ...doc,
+          score: this.cosineSimilarity(queryEmbedding, doc.embedding),
+        }
+      })
       .sort((a, b) => b.score - a.score)
       .slice(0, topK)
 
