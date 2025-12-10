@@ -11,17 +11,14 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.80",
+    "@mastra/core": "^0.24.7",
     "ai": "^5.0.108",
     "pdf-parse": "^1.1.1",
     "mammoth": "^1.8.0",
     "xlsx": "^0.18.5",
     "sharp": "^0.33.5",
     "zod": "^3.23.8",
-    "dotenv": "^16.4.7",
-    "langchain": "^0.3.13",
-    "@langchain/core": "^0.3.58",
-    "@langchain/openai": "^0.6.16",
-    "@langchain/community": "^0.3.21"
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
     "@types/node": "^20.12.7",

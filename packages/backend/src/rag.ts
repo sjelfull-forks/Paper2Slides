@@ -1,14 +1,11 @@
 /**
  * RAG (Retrieval Augmented Generation) Implementation
- * TypeScript equivalent of Python's LightRAG
- * Uses LangChain.js + OpenAI + Vector Store
+ * Simplified implementation using OpenAI embeddings and Vercel AI SDK
+ * Mastra is available for future agent-based enhancements
  */
 
-import { OpenAI } from '@langchain/openai'
-import { OpenAIEmbeddings } from '@langchain/openai'
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter'
-import { MemoryVectorStore } from 'langchain/vectorstores/memory'
-import { Document } from 'langchain/document'
+import { openai } from '@ai-sdk/openai'
+import { generateText, streamText } from 'ai'
 import type { ParsedDocument } from './parser'
 
 export interface RAGConfig {
@@ -38,12 +35,16 @@ export interface RAGResult {
   }>
 }
 
+interface DocumentChunk {
+  content: string
+  metadata: Record<string, any>
+  embedding?: number[]
+}
+
 export class RAGSystem {
-  private llm: OpenAI
-  private embeddings: OpenAIEmbeddings
-  private vectorStore: MemoryVectorStore | null = null
-  private textSplitter: RecursiveCharacterTextSplitter
   private config: Required<RAGConfig>
+  private documents: DocumentChunk[] = []
+  private indexed: boolean = false
 
   constructor(config: RAGConfig) {
     this.config = {
@@ -54,66 +55,112 @@ export class RAGSystem {
       topK: config.topK || 4,
       openaiApiKey: config.openaiApiKey,
     }
+  }
 
-    this.llm = new OpenAI({
-      modelName: this.config.model,
-      openAIApiKey: this.config.openaiApiKey,
-      temperature: 0.7,
-    })
+  /**
+   * Split text into chunks
+   */
+  private splitIntoChunks(text: string): string[] {
+    const chunks: string[] = []
+    const { chunkSize, chunkOverlap } = this.config
 
-    this.embeddings = new OpenAIEmbeddings({
-      modelName: this.config.embeddingModel,
-      openAIApiKey: this.config.openaiApiKey,
-    })
+    let start = 0
+    while (start < text.length) {
+      const end = Math.min(start + chunkSize, text.length)
+      chunks.push(text.slice(start, end))
+      start += chunkSize - chunkOverlap
+    }
 
-    this.textSplitter = new RecursiveCharacterTextSplitter({
-      chunkSize: this.config.chunkSize,
-      chunkOverlap: this.config.chunkOverlap,
-    })
+    return chunks
+  }
+
+  /**
+   * Generate embeddings for text using OpenAI
+   */
+  private async generateEmbedding(text: string): Promise<number[]> {
+    try {
+      const response = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.openaiApiKey}`,
+        },
+        body: JSON.stringify({
+          input: text,
+          model: this.config.embeddingModel,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Embedding API error: ${response.statusText}`)
+      }
+
+      const data: any = await response.json()
+      return data.data[0].embedding
+    } catch (error) {
+      console.error('Error generating embedding:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Calculate cosine similarity between two vectors
+   */
+  private cosineSimilarity(a: number[], b: number[]): number {
+    const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0)
+    const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0))
+    const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0))
+    return dotProduct / (magnitudeA * magnitudeB)
   }
 
   /**
    * Index a document for RAG
    */
   async indexDocument(doc: ParsedDocument): Promise<void> {
-    // Split text into chunks
-    const chunks = await this.textSplitter.createDocuments(
-      [doc.text],
-      [{ fileName: doc.metadata.fileName, fileType: doc.metadata.fileType }]
-    )
+    const chunks = this.splitIntoChunks(doc.text)
 
-    // Create or update vector store
-    if (!this.vectorStore) {
-      this.vectorStore = await MemoryVectorStore.fromDocuments(chunks, this.embeddings)
-    } else {
-      await this.vectorStore.addDocuments(chunks)
+    for (const chunk of chunks) {
+      const embedding = await this.generateEmbedding(chunk)
+      this.documents.push({
+        content: chunk,
+        metadata: {
+          fileName: doc.metadata.fileName,
+          fileType: doc.metadata.fileType,
+        },
+        embedding,
+      })
     }
+
+    this.indexed = true
   }
 
   /**
    * Query the RAG system
    */
   async query(query: RAGQuery): Promise<RAGResult> {
-    if (!this.vectorStore) {
+    if (!this.indexed || this.documents.length === 0) {
       throw new Error('No documents indexed. Call indexDocument first.')
     }
 
     const topK = query.topK || this.config.topK
+    const queryEmbedding = await this.generateEmbedding(query.query)
 
-    // Retrieve relevant documents
-    const results = await this.vectorStore.similaritySearchWithScore(query.query, topK)
+    const results = this.documents
+      .map((doc) => ({
+        ...doc,
+        score: this.cosineSimilarity(queryEmbedding, doc.embedding!),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK)
 
-    // Format sources
-    const sources = results.map(([doc, score]) => ({
-      content: doc.pageContent,
-      metadata: doc.metadata,
-      score,
+    const sources = results.map((r) => ({
+      content: r.content,
+      metadata: r.metadata,
+      score: r.score,
     }))
 
-    // Build context from retrieved documents
     const context = sources.map((s, i) => `[${i + 1}] ${s.content}`).join('\n\n')
 
-    // Generate answer using LLM with context
     const prompt = `Based on the following context, answer the question.
 
 Context:
@@ -123,10 +170,14 @@ Question: ${query.query}
 
 Answer:`
 
-    const answer = await this.llm.call(prompt)
+    // Use Vercel AI SDK for generation
+    const { text } = await generateText({
+      model: openai(this.config.model),
+      prompt,
+    })
 
     return {
-      answer,
+      answer: text,
       sources,
     }
   }
@@ -135,17 +186,22 @@ Answer:`
    * Stream a query response
    */
   async *streamQuery(query: RAGQuery): AsyncGenerator<string> {
-    if (!this.vectorStore) {
+    if (!this.indexed || this.documents.length === 0) {
       throw new Error('No documents indexed. Call indexDocument first.')
     }
 
     const topK = query.topK || this.config.topK
+    const queryEmbedding = await this.generateEmbedding(query.query)
 
-    // Retrieve relevant documents
-    const results = await this.vectorStore.similaritySearchWithScore(query.query, topK)
+    const results = this.documents
+      .map((doc) => ({
+        ...doc,
+        score: this.cosineSimilarity(queryEmbedding, doc.embedding!),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK)
 
-    // Build context
-    const context = results.map(([doc], i) => `[${i + 1}] ${doc.pageContent}`).join('\n\n')
+    const context = results.map((r, i) => `[${i + 1}] ${r.content}`).join('\n\n')
 
     const prompt = `Based on the following context, answer the question.
 
@@ -156,10 +212,13 @@ Question: ${query.query}
 
 Answer:`
 
-    // Stream response
-    const stream = await this.llm.stream(prompt)
+    // Use Vercel AI SDK for streaming
+    const { textStream } = await streamText({
+      model: openai(this.config.model),
+      prompt,
+    })
 
-    for await (const chunk of stream) {
+    for await (const chunk of textStream) {
       yield chunk
     }
   }
@@ -171,18 +230,9 @@ Answer:`
     documentCount: number
     chunkCount: number
   }> {
-    if (!this.vectorStore) {
-      return {
-        documentCount: 0,
-        chunkCount: 0,
-      }
-    }
-
-    // Note: MemoryVectorStore doesn't expose document count directly
-    // This is a simplified version
     return {
-      documentCount: 1, // Approximate
-      chunkCount: 0, // Would need to track separately
+      documentCount: 1,
+      chunkCount: this.documents.length,
     }
   }
 
@@ -190,6 +240,7 @@ Answer:`
    * Clear all indexed documents
    */
   clear(): void {
-    this.vectorStore = null
+    this.documents = []
+    this.indexed = false
   }
 }

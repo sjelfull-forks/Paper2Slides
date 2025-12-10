@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       chunkSize: 1000,
       chunkOverlap: 200,
     })
-    const processor = new PaperProcessor(ragSystem)
+    const processor = new PaperProcessor(ragSystem, process.env.OPENAI_API_KEY)
 
     // Create a streaming response
     const encoder = new TextEncoder()

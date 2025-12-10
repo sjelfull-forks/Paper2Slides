@@ -1,13 +1,12 @@
 /**
  * Paper Processing Pipeline
- * Uses Vercel AI SDK for paper analysis and slide generation
- * Mastra available for future agent-based enhancements
+ * TypeScript implementation of paper2slides processing
  */
 
 import { openai } from '@ai-sdk/openai'
 import { generateText, streamText } from 'ai'
 import type { ParsedDocument } from './parser'
-import type { RAGSystem } from './rag'
+import type { RAGSystem, RAGResult } from './rag'
 
 export interface PaperSummary {
   title: string
@@ -29,8 +28,7 @@ export interface SlideConfig {
   length: 'short' | 'medium' | 'long'
   outputType: 'slides' | 'poster'
   fastMode: boolean
-  model?: string
-  apiKey?: string
+  model?: string // Optional: specify which model to use
 }
 
 // Default model for slide generation
@@ -45,15 +43,13 @@ export interface SlideContent {
 
 export class PaperProcessor {
   private ragSystem: RAGSystem
-  private apiKey: string
 
-  constructor(ragSystem: RAGSystem, apiKey?: string) {
+  constructor(ragSystem: RAGSystem) {
     this.ragSystem = ragSystem
-    this.apiKey = apiKey || process.env.OPENAI_API_KEY || ''
   }
 
   /**
-   * Summarize a paper document using Mastra agent
+   * Summarize a paper document
    */
   async summarizePaper(doc: ParsedDocument): Promise<PaperSummary> {
     // Index document in RAG
@@ -91,21 +87,19 @@ export class PaperProcessor {
       abstract: abstractResult.answer.trim(),
       keyFindings,
       methodology: methodResult.answer.trim(),
-      figures:
-        doc.images?.map((img) => ({
-          caption: img.caption || 'Figure',
-          description: 'Image from document',
-        })) || [],
-      tables:
-        doc.tables?.map((table) => ({
-          caption: table.caption || 'Table',
-          summary: `Table with ${table.data.length} rows`,
-        })) || [],
+      figures: doc.images?.map((img) => ({
+        caption: img.caption || 'Figure',
+        description: 'Image from document',
+      })) || [],
+      tables: doc.tables?.map((table) => ({
+        caption: table.caption || 'Table',
+        summary: `Table with ${table.data.length} rows`,
+      })) || [],
     }
   }
 
   /**
-   * Generate slide plan from paper summary using Mastra agent
+   * Generate slide plan from paper summary
    */
   async generateSlidePlan(
     summary: PaperSummary,
@@ -128,20 +122,12 @@ For each slide, provide:
 3. Key points (3-5 bullet points)
 4. Optional: Image generation prompt
 
-Format as JSON array with structure:
-[
-  {
-    "slideNumber": 1,
-    "title": "Slide Title",
-    "content": ["Point 1", "Point 2", "Point 3"],
-    "imagePrompt": "Optional image description"
-  }
-]`
+Format as JSON array.`
 
-    // Use Vercel AI SDK for generation
     const { text } = await generateText({
       model: openai(config.model || DEFAULT_SLIDE_MODEL),
       prompt,
+      temperature: 0.7,
     })
 
     // Parse the response
@@ -187,7 +173,7 @@ Format as JSON array with structure:
   }
 
   /**
-   * Generate slide content with streaming
+   * Generate slide content with AI SDK streaming
    */
   async *generateSlideContentStream(
     slidePrompt: string,
@@ -196,6 +182,7 @@ Format as JSON array with structure:
     const { textStream } = await streamText({
       model: openai(model || DEFAULT_SLIDE_MODEL),
       prompt: slidePrompt,
+      temperature: 0.7,
     })
 
     for await (const chunk of textStream) {
