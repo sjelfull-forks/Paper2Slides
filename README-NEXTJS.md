@@ -43,8 +43,8 @@ Paper2Slides/
 
 - Node.js 20 or later
 - pnpm 9 or later
-- PostgreSQL 14 or later
-- Python 3.12 (for paper processing backend)
+- **PostgreSQL 14+ OR PGlite** (PGlite recommended for local development - no installation needed!)
+- Python 3.12 (optional - for legacy Python backend)
 
 ### Installation
 
@@ -56,7 +56,33 @@ pnpm install
 
 2. **Set up environment variables:**
 
-Create `.env.local` in `apps/web/`:
+Choose between PGlite (recommended) or PostgreSQL:
+
+#### Option A: PGlite (Recommended - No PostgreSQL needed!)
+
+Use the automated setup script:
+
+```bash
+./scripts-new/setup-pglite.sh
+```
+
+Or manually create `apps/web/.env.local`:
+
+```bash
+# Use PGlite for local development
+USE_PGLITE=true
+
+# OpenAI
+OPENAI_API_KEY=your_openai_api_key
+
+# File uploads
+UPLOAD_DIR=./sources/uploads
+OUTPUT_DIR=./outputs
+```
+
+#### Option B: PostgreSQL (Traditional)
+
+Create `apps/web/.env.local`:
 
 ```bash
 # Database
@@ -65,39 +91,38 @@ DATABASE_URL=postgresql://user:password@localhost:5432/paper2slides
 # OpenAI
 OPENAI_API_KEY=your_openai_api_key
 
-# Python Backend
-PYTHON_BACKEND_URL=http://localhost:8000
+# File uploads
+UPLOAD_DIR=./sources/uploads
+OUTPUT_DIR=./outputs
 ```
 
 3. **Set up the database:**
 
+The schema is automatically initialized on first use with PGlite, or you can manually push:
+
 ```bash
-# Push schema to database
+# Push schema to database (works with both PGlite and PostgreSQL)
 pnpm db:push
 
-# Optional: Run Drizzle Studio to view database
-pnpm db:studio
+# Or for PGlite specifically
+pnpm db:push:pglite
+
+# Optional: Run Drizzle Studio to view/manage database
+pnpm db:studio        # For PostgreSQL
+pnpm db:studio:pglite # For PGlite
 ```
 
-4. **Start Python backend (for paper processing):**
+**📖 See [LOCAL-POSTGRES.md](./LOCAL-POSTGRES.md) for detailed PGlite setup and usage guide.**
 
-```bash
-# In a separate terminal
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-pip install -r requirements.txt
-
-# Start the backend
-python api/server.py
-```
-
-5. **Start the development server:**
+4. **Start the development server:**
 
 ```bash
 pnpm dev
 ```
 
 The Next.js app will be available at `http://localhost:3000`
+
+**Note:** Python backend is optional. The TypeScript backend now handles all functionality.
 
 ### Building for Production
 
@@ -128,8 +153,12 @@ pnpm build --filter=web # Build only the web app
 pnpm lint               # Lint all packages
 
 # Database
-pnpm db:push            # Push schema changes to database
-pnpm db:studio          # Open Drizzle Studio
+pnpm db:push              # Push schema to database
+pnpm db:push:pglite       # Push schema to PGlite
+pnpm db:studio            # Open Drizzle Studio (PostgreSQL)
+pnpm db:studio:pglite     # Open Drizzle Studio (PGlite)
+pnpm db:generate          # Generate migration files
+pnpm db:generate:pglite   # Generate migration files (PGlite)
 
 # Formatting
 pnpm format             # Format code with Prettier
@@ -140,8 +169,10 @@ pnpm format             # Format code with Prettier
 1. **Monorepo Architecture**: Uses Turborepo for efficient builds and caching
 2. **Type-Safe Database**: Drizzle ORM provides end-to-end type safety
 3. **Modern UI**: Built with shadcn/ui components and Tailwind CSS
-4. **AI Integration**: Ready for Vercel AI SDK integration
-5. **Hybrid Backend**: Next.js API routes + Python backend for heavy processing
+4. **AI Integration**: Vercel AI SDK with Mastra framework
+5. **TypeScript Backend**: Complete backend in TypeScript with RAG, document parsing
+6. **Flexible Database**: PGlite for easy local dev, PostgreSQL for production
+7. **No External Dependencies**: Run PGlite locally without Docker or PostgreSQL installation
 
 ### Database Schema
 
@@ -153,6 +184,36 @@ The application uses the following main tables:
 - `checkpoints` - Pipeline state for resuming
 
 See `packages/database/src/schema.ts` for full schema definitions.
+
+### Local Development with PGlite
+
+**PGlite** is a lightweight WASM-based PostgreSQL perfect for local development:
+
+- ✅ **No Installation**: No PostgreSQL or Docker needed
+- ✅ **Fast**: Millisecond startup time
+- ✅ **Compatible**: Full PostgreSQL compatibility
+- ✅ **Persistent**: Data stored in `./pglite-data` directory
+- ✅ **Drizzle Native**: Recommended by Drizzle team
+
+**Quick Setup:**
+```bash
+./scripts-new/setup-pglite.sh
+pnpm install
+pnpm db:push
+pnpm dev
+```
+
+**📖 Complete guide:** See [LOCAL-POSTGRES.md](./LOCAL-POSTGRES.md) for:
+- Detailed setup instructions
+- PGlite vs PostgreSQL comparison
+- Switching between databases
+- Testing strategies
+- Troubleshooting
+
+**When to use what:**
+- **Local Development**: PGlite (recommended)
+- **Integration Testing**: PostgreSQL in Docker
+- **Production**: Managed PostgreSQL (Supabase, RDS, etc.)
 
 ### API Routes
 

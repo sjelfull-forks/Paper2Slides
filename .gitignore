@@ -79,6 +79,12 @@ Desktop.ini
 sources/
 outputs/
 
+# PGlite data directory (local development database)
+pglite-data/
+*.db
+*.db-shm
+*.db-wal
+
 # Temporary and test files
 debug.*
 test.*
