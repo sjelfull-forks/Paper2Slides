@@ -40,6 +40,15 @@ export interface RAGResult {
 }
 
 /**
+ * Interface for Mastra RAG source documents
+ */
+interface MastraRAGSource {
+  content: string
+  metadata?: Record<string, any>
+  score?: number
+}
+
+/**
  * RAG System using Mastra's native capabilities
  * Leverages Mastra for:
  * - Automatic text chunking (RecursiveCharacterTextSplitter)
@@ -150,7 +159,7 @@ export class RAGSystem {
 
     return {
       answer: result.answer,
-      sources: result.sources.map((source: any) => ({
+      sources: result.sources.map((source: MastraRAGSource) => ({
         content: source.content,
         metadata: source.metadata || {},
         score: source.score || 0,
@@ -176,7 +185,9 @@ export class RAGSystem {
     })
 
     // Build context from retrieved sources
-    const context = sources.map((s: any, i: number) => `[${i + 1}] ${s.content}`).join('\n\n')
+    const context = sources
+      .map((s: MastraRAGSource, i: number) => `[${i + 1}] ${s.content}`)
+      .join('\n\n')
 
     const prompt = `Based on the following context, answer the question.
 
