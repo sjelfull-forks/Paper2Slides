@@ -43,7 +43,7 @@ Paper2Slides/
 
 - Node.js 20 or later
 - pnpm 9 or later
-- **PostgreSQL 14+ OR PGlite** (PGlite recommended for local development - no installation needed!)
+- **Database**: SQLite (default, built-in), PGlite, or PostgreSQL
 - Python 3.12 (optional - for legacy Python backend)
 
 ### Installation
@@ -56,9 +56,32 @@ pnpm install
 
 2. **Set up environment variables:**
 
-Choose between PGlite (recommended) or PostgreSQL:
+Choose between SQLite (default), PGlite, or PostgreSQL:
 
-#### Option A: PGlite (Recommended - No PostgreSQL needed!)
+#### Option A: SQLite (Default - Simplest Setup!) ⭐
+
+SQLite works out of the box with **zero configuration**!
+
+Use the automated setup script:
+
+```bash
+./scripts-new/setup-sqlite.sh
+```
+
+Or manually create `apps/web/.env.local`:
+
+```bash
+# SQLite is the default - no database config needed!
+
+# OpenAI
+OPENAI_API_KEY=your_openai_api_key
+
+# File uploads
+UPLOAD_DIR=./sources/uploads
+OUTPUT_DIR=./outputs
+```
+
+#### Option B: PGlite (PostgreSQL-Compatible)
 
 Use the automated setup script:
 
@@ -80,7 +103,7 @@ UPLOAD_DIR=./sources/uploads
 OUTPUT_DIR=./outputs
 ```
 
-#### Option B: PostgreSQL (Traditional)
+#### Option C: PostgreSQL (Production)
 
 Create `apps/web/.env.local`:
 
@@ -98,21 +121,24 @@ OUTPUT_DIR=./outputs
 
 3. **Set up the database:**
 
-The schema is automatically initialized on first use with PGlite, or you can manually push:
+The schema is automatically initialized on first use with SQLite, or you can manually push:
 
 ```bash
-# Push schema to database (works with both PGlite and PostgreSQL)
+# Push schema to database (auto-detects your database type)
 pnpm db:push
 
-# Or for PGlite specifically
-pnpm db:push:pglite
+# Or specify database type explicitly:
+pnpm db:push:sqlite   # For SQLite (default)
+pnpm db:push:pglite   # For PGlite
+# No special command for PostgreSQL - just use pnpm db:push
 
 # Optional: Run Drizzle Studio to view/manage database
-pnpm db:studio        # For PostgreSQL
-pnpm db:studio:pglite # For PGlite
+pnpm db:studio:sqlite   # For SQLite
+pnpm db:studio:pglite   # For PGlite
+pnpm db:studio          # For PostgreSQL
 ```
 
-**📖 See [LOCAL-POSTGRES.md](./LOCAL-POSTGRES.md) for detailed PGlite setup and usage guide.**
+**📖 See [LOCAL-DATABASE.md](./LOCAL-DATABASE.md) for detailed comparison and setup guide for all three database options.**
 
 4. **Start the development server:**
 

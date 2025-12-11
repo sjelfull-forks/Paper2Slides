@@ -1,42 +1,54 @@
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
-import * as schema from './schema'
-
 /**
- * Database configuration with smart PGlite/PostgreSQL selection
+ * Database configuration with smart SQLite/PGlite/PostgreSQL selection
  * 
- * Set USE_PGLITE=true in environment to use PGlite for local development
- * Otherwise, uses PostgreSQL via DATABASE_URL
+ * Priority order:
+ * 1. DATABASE_URL is set → PostgreSQL (production)
+ * 2. USE_PGLITE=true → PGlite (PostgreSQL-compatible, WASM-based)
+ * 3. Default → SQLite (lightweight, file-based)
+ * 
+ * Environment variables:
+ * - DATABASE_URL: PostgreSQL connection string (highest priority)
+ * - USE_PGLITE: Set to 'true' to use PGlite instead of SQLite
+ * - SQLITE_DB_PATH: Path to SQLite database file (default: './sqlite.db')
  */
 
-// Check if we should use PGlite
+// Determine which database to use
+const hasPostgresURL = !!process.env.DATABASE_URL
 const usePGlite = process.env.USE_PGLITE === 'true'
 
-if (!usePGlite && !process.env.DATABASE_URL) {
-  throw new Error(
-    'DATABASE_URL environment variable is not set. ' +
-    'Either set DATABASE_URL or set USE_PGLITE=true for local development. ' +
-    'See LOCAL-POSTGRES.md for setup instructions.'
-  )
-}
-
 // Initialize database based on configuration
-let db: ReturnType<typeof drizzle>
+let db: any
 
-if (usePGlite) {
-  // Use PGlite for local development
-  // Dynamic import to avoid loading PGlite in production
+if (hasPostgresURL) {
+  // Priority 1: Use PostgreSQL if DATABASE_URL is set
+  const { drizzle } = await import('drizzle-orm/postgres-js')
+  const postgres = (await import('postgres')).default
+  const schema = await import('./schema')
+  
+  const client = postgres(process.env.DATABASE_URL!)
+  db = drizzle(client, { schema })
+  console.log('✅ Using PostgreSQL database')
+} else if (usePGlite) {
+  // Priority 2: Use PGlite if explicitly requested
   const { getDefaultPGliteDB } = await import('./pglite')
   const pgliteInstance = await getDefaultPGliteDB()
   db = pgliteInstance.db
   console.log('✅ Using PGlite for local development')
 } else {
-  // Use PostgreSQL
-  const client = postgres(process.env.DATABASE_URL!)
-  db = drizzle(client, { schema })
-  console.log('✅ Using PostgreSQL database')
+  // Priority 3: Default to SQLite for local development
+  const { getDefaultSQLiteDB } = await import('./sqlite')
+  const sqliteInstance = getDefaultSQLiteDB()
+  db = sqliteInstance.db
+  console.log('✅ Using SQLite for local development (default)')
 }
 
 export { db }
-export * from './schema'
-export * from './pglite'
+
+// Export schemas based on database type
+if (hasPostgresURL || usePGlite) {
+  export * from './schema'
+  export * from './pglite'
+} else {
+  export * from './schema-sqlite'
+  export * from './sqlite'
+}

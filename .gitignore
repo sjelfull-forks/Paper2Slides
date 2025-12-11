@@ -84,6 +84,7 @@ pglite-data/
 *.db
 *.db-shm
 *.db-wal
+drizzle-sqlite/
 
 # Temporary and test files
 debug.*
