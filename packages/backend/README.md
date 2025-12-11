@@ -6,18 +6,25 @@ TypeScript implementation of the Paper2Slides backend with Mastra framework inte
 
 This package provides:
 - **Document Parsing**: PDF, DOCX, XLSX, TXT, MD parsing
-- **RAG System**: Custom RAG with OpenAI embeddings and Vercel AI SDK
+- **RAG System**: Native Mastra RAG with built-in chunking, embeddings, and vector storage
 - **Paper Processing**: AI-powered paper summarization and slide generation
-- **Mastra Integration**: Modern AI framework for future agent-based enhancements
+- **Mastra Integration**: Full integration with Mastra framework for production AI features
 
 ## Migration from LangChain to Mastra
 
-This package has been migrated from LangChain.js to use Mastra framework capabilities. Benefits include:
+This package has been migrated from LangChain.js to use **native Mastra RAG capabilities**. Benefits include:
 
 - **Simpler Dependencies**: Mastra replaces 4 LangChain packages with 1 unified framework
 - **Production Ready**: Built-in observability, evals, and agent support
 - **Native TypeScript**: Better performance and smaller bundle size
+- **No Code Duplication**: Uses Mastra's built-in chunking, embedding, and retrieval
 - **Modern Architecture**: Designed for current AI development patterns
+
+See Mastra RAG documentation:
+- [RAG Overview](https://mastra.ai/docs/rag/overview)
+- [Chunking and Embedding](https://mastra.ai/docs/rag/chunking-and-embedding)
+- [Retrieval](https://mastra.ai/docs/rag/retrieval)
+- [Vector Databases](https://mastra.ai/docs/rag/vector-databases)
 
 ## Python → TypeScript Mapping
 
@@ -26,7 +33,7 @@ This package has been migrated from LangChain.js to use Mastra framework capabil
 | MinerU (PDF parsing) | pdf-parse | npm |
 | python-docx | mammoth | npm |
 | openpyxl | xlsx | npm |
-| LightRAG | Custom RAG + Mastra | OpenAI + Vercel AI SDK |
+| LightRAG | **Mastra RAG** (native) | @mastra/core |
 | FastAPI | Next.js API Routes | Built-in |
 | PIL/Pillow | sharp | npm |
 
@@ -51,7 +58,14 @@ console.log(doc.tables) // Extracted tables (if any)
 ```
 
 ### RAG System
-Custom RAG implementation with OpenAI embeddings and Vercel AI SDK:
+
+**Native Mastra RAG implementation** - uses Mastra's built-in capabilities:
+
+- **Automatic Chunking**: Uses Mastra's `RecursiveCharacterTextSplitter`
+- **Embedding Generation**: Managed by Mastra's Embedder
+- **Vector Storage**: Mastra's in-memory store (upgradeable to Postgres/Pinecone)
+- **Retrieval**: Mastra's built-in similarity search
+- **No Duplication**: All functionality provided by Mastra framework
 
 ```typescript
 import { RAGSystem } from '@paper2slides/backend'
@@ -59,14 +73,15 @@ import { RAGSystem } from '@paper2slides/backend'
 const rag = new RAGSystem({
   openaiApiKey: process.env.OPENAI_API_KEY!,
   model: 'gpt-4-turbo-preview',
+  embeddingModel: 'text-embedding-3-small',
   chunkSize: 1000,
   chunkOverlap: 200,
 })
 
-// Index documents
+// Index documents - Mastra handles chunking and embedding
 await rag.indexDocument(doc)
 
-// Query
+// Query - Mastra handles retrieval and generation
 const result = await rag.query({
   query: 'What are the main findings?',
   topK: 4,
@@ -74,7 +89,19 @@ const result = await rag.query({
 
 console.log(result.answer)
 console.log(result.sources)
+
+// Stream responses
+for await (const chunk of rag.streamQuery({ query: 'Explain the methodology' })) {
+  process.stdout.write(chunk)
+}
 ```
+
+**Key Benefits:**
+- ✅ Uses Mastra's production-tested chunking
+- ✅ Automatic embedding management
+- ✅ Built-in vector similarity search
+- ✅ Observable and traceable
+- ✅ Can upgrade to persistent vector stores
 
 ### Paper Processor
 End-to-end paper processing pipeline:

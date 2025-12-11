@@ -1,11 +1,12 @@
 /**
- * RAG (Retrieval Augmented Generation) Implementation
- * Simplified implementation using OpenAI embeddings and Vercel AI SDK
- * Mastra is available for future agent-based enhancements
+ * RAG (Retrieval Augmented Generation) Implementation using Mastra
+ * Uses Mastra's built-in RAG capabilities for chunking, embedding, and retrieval
+ * See: https://mastra.ai/docs/rag/overview
  */
 
+import { Mastra, RAG } from '@mastra/core'
 import { openai } from '@ai-sdk/openai'
-import { generateText, streamText } from 'ai'
+import { streamText } from 'ai'
 import type { ParsedDocument } from './parser'
 
 export interface RAGConfig {
@@ -20,6 +21,9 @@ export interface RAGConfig {
 // Default configurations
 const DEFAULT_MODEL = 'gpt-4-turbo-preview'
 const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
+const DEFAULT_CHUNK_SIZE = 1000
+const DEFAULT_CHUNK_OVERLAP = 200
+const DEFAULT_TOP_K = 4
 
 export interface RAGQuery {
   query: string
@@ -35,217 +39,144 @@ export interface RAGResult {
   }>
 }
 
-interface DocumentChunk {
-  content: string
-  metadata: Record<string, any>
-  embedding?: number[]
-}
-
-interface OpenAIEmbeddingResponse {
-  data: Array<{
-    embedding: number[]
-    index: number
-  }>
-  model: string
-  usage: {
-    prompt_tokens: number
-    total_tokens: number
-  }
-}
-
+/**
+ * RAG System using Mastra's native capabilities
+ * Leverages Mastra for:
+ * - Automatic text chunking (RecursiveCharacterTextSplitter)
+ * - Embedding generation (OpenAI)
+ * - Vector storage (in-memory, can be upgraded to Postgres/Pinecone)
+ * - Retrieval and generation
+ */
 export class RAGSystem {
   private config: Required<RAGConfig>
-  private documents: DocumentChunk[] = []
-  private indexed: boolean = false
+  private mastra: Mastra
+  private rag: RAG | null = null
 
   constructor(config: RAGConfig) {
     this.config = {
       model: config.model || DEFAULT_MODEL,
       embeddingModel: config.embeddingModel || DEFAULT_EMBEDDING_MODEL,
-      chunkSize: config.chunkSize || 1000,
-      chunkOverlap: config.chunkOverlap || 200,
-      topK: config.topK || 4,
+      chunkSize: config.chunkSize || DEFAULT_CHUNK_SIZE,
+      chunkOverlap: config.chunkOverlap || DEFAULT_CHUNK_OVERLAP,
+      topK: config.topK || DEFAULT_TOP_K,
       openaiApiKey: config.openaiApiKey,
     }
-  }
 
-  /**
-   * Split text into chunks
-   */
-  private splitIntoChunks(text: string): string[] {
-    if (!text || text.length === 0) {
-      return []
-    }
-
-    const chunks: string[] = []
-    const { chunkSize, chunkOverlap } = this.config
-
-    // Validate configuration
-    if (chunkOverlap >= chunkSize) {
-      throw new Error('chunkOverlap must be less than chunkSize')
-    }
-
-    let start = 0
-    while (start < text.length) {
-      const end = Math.min(start + chunkSize, text.length)
-      chunks.push(text.slice(start, end))
-      start += chunkSize - chunkOverlap
-
-      // Safety check to prevent infinite loops
-      if (start <= 0) break
-    }
-
-    return chunks
-  }
-
-  /**
-   * Generate embeddings for text using OpenAI
-   */
-  private async generateEmbedding(text: string): Promise<number[]> {
-    try {
-      const response = await fetch('https://api.openai.com/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.openaiApiKey}`,
+    // Initialize Mastra with OpenAI provider
+    this.mastra = new Mastra({
+      providers: {
+        openai: {
+          apiKey: this.config.openaiApiKey,
         },
-        body: JSON.stringify({
-          input: text,
-          model: this.config.embeddingModel,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Embedding API error: ${response.statusText}`)
-      }
-
-      const data = (await response.json()) as OpenAIEmbeddingResponse
-      return data.data[0].embedding
-    } catch (error) {
-      console.error('Error generating embedding:', error)
-      throw error
-    }
+      },
+    })
   }
 
   /**
-   * Calculate cosine similarity between two vectors
+   * Initialize RAG system (lazy initialization)
    */
-  private cosineSimilarity(a: number[], b: number[]): number {
-    if (a.length !== b.length) {
-      throw new Error('Vectors must have the same length')
-    }
+  private async initializeRAG(): Promise<void> {
+    if (this.rag) return
 
-    const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0)
-    const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0))
-    const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0))
-
-    // Handle zero magnitude case
-    if (magnitudeA === 0 || magnitudeB === 0) {
-      return 0
-    }
-
-    return dotProduct / (magnitudeA * magnitudeB)
+    // Create RAG instance with Mastra's built-in components
+    // See: https://mastra.ai/docs/rag/chunking-and-embedding
+    this.rag = new RAG({
+      // Use Mastra's LLM abstraction
+      llm: this.mastra.LLM({
+        provider: 'OPEN_AI',
+        name: this.config.model,
+      }),
+      // Use Mastra's embedding abstraction
+      // See: https://mastra.ai/docs/rag/chunking-and-embedding
+      embedder: this.mastra.Embedder({
+        provider: 'OPEN_AI',
+        name: this.config.embeddingModel,
+      }),
+      // Use Mastra's in-memory vector store
+      // Can be upgraded to Postgres: https://mastra.ai/docs/rag/vector-databases
+      vectorStore: this.mastra.VectorStore('IN_MEMORY'),
+      // Configure chunking strategy
+      // See: https://mastra.ai/docs/rag/chunking-and-embedding
+      chunkConfig: {
+        size: this.config.chunkSize,
+        overlap: this.config.chunkOverlap,
+      },
+    })
   }
 
   /**
-   * Index a document for RAG
+   * Index a document using Mastra's RAG system
+   * Mastra handles chunking and embedding automatically
    */
   async indexDocument(doc: ParsedDocument): Promise<void> {
-    const chunks = this.splitIntoChunks(doc.text)
+    await this.initializeRAG()
+    if (!this.rag) throw new Error('RAG not initialized')
 
-    for (const chunk of chunks) {
-      const embedding = await this.generateEmbedding(chunk)
-      this.documents.push({
-        content: chunk,
+    // Mastra's RAG.ingest handles:
+    // 1. Text chunking using RecursiveCharacterTextSplitter
+    // 2. Embedding generation for each chunk
+    // 3. Storage in vector store
+    await this.rag.ingest([
+      {
+        content: doc.text,
         metadata: {
           fileName: doc.metadata.fileName,
           fileType: doc.metadata.fileType,
         },
-        embedding,
-      })
-    }
-
-    this.indexed = true
+      },
+    ])
   }
 
   /**
-   * Query the RAG system
+   * Query the RAG system using Mastra's retrieval
+   * See: https://mastra.ai/docs/rag/retrieval
    */
   async query(query: RAGQuery): Promise<RAGResult> {
-    if (!this.indexed || this.documents.length === 0) {
+    if (!this.rag) {
       throw new Error('No documents indexed. Call indexDocument first.')
     }
 
     const topK = query.topK || this.config.topK
-    const queryEmbedding = await this.generateEmbedding(query.query)
 
-    const results = this.documents
-      .map((doc) => {
-        if (!doc.embedding) {
-          throw new Error('Document missing embedding')
-        }
-        return {
-          ...doc,
-          score: this.cosineSimilarity(queryEmbedding, doc.embedding),
-        }
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
-
-    const sources = results.map((r) => ({
-      content: r.content,
-      metadata: r.metadata,
-      score: r.score,
-    }))
-
-    const context = sources.map((s, i) => `[${i + 1}] ${s.content}`).join('\n\n')
-
-    const prompt = `Based on the following context, answer the question.
-
-Context:
-${context}
-
-Question: ${query.query}
-
-Answer:`
-
-    // Use Vercel AI SDK for generation
-    const { text } = await generateText({
-      model: openai(this.config.model),
-      prompt,
+    // Mastra's RAG.query handles:
+    // 1. Query embedding generation
+    // 2. Vector similarity search
+    // 3. Context retrieval
+    // 4. LLM generation with context
+    const result = await this.rag.query({
+      query: query.query,
+      topK,
     })
 
     return {
-      answer: text,
-      sources,
+      answer: result.answer,
+      sources: result.sources.map((source: any) => ({
+        content: source.content,
+        metadata: source.metadata || {},
+        score: source.score || 0,
+      })),
     }
   }
 
   /**
    * Stream a query response
+   * Uses Mastra for retrieval, Vercel AI SDK for streaming
    */
   async *streamQuery(query: RAGQuery): AsyncGenerator<string> {
-    if (!this.indexed || this.documents.length === 0) {
+    if (!this.rag) {
       throw new Error('No documents indexed. Call indexDocument first.')
     }
 
     const topK = query.topK || this.config.topK
-    const queryEmbedding = await this.generateEmbedding(query.query)
 
-    const results = this.documents
-      .map((doc) => {
-        if (!doc.embedding) {
-          throw new Error('Document missing embedding')
-        }
-        return {
-          ...doc,
-          score: this.cosineSimilarity(queryEmbedding, doc.embedding),
-        }
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
+    // Use Mastra's retrieve method to get relevant chunks
+    const sources = await this.rag.retrieve({
+      query: query.query,
+      topK,
+    })
 
-    const context = results.map((r, i) => `[${i + 1}] ${r.content}`).join('\n\n')
+    // Build context from retrieved sources
+    const context = sources.map((s: any, i: number) => `[${i + 1}] ${s.content}`).join('\n\n')
 
     const prompt = `Based on the following context, answer the question.
 
@@ -256,7 +187,7 @@ Question: ${query.query}
 
 Answer:`
 
-    // Use Vercel AI SDK for streaming
+    // Use Vercel AI SDK for streaming (better than Mastra for this)
     const { textStream } = await streamText({
       model: openai(this.config.model),
       prompt,
@@ -274,9 +205,18 @@ Answer:`
     documentCount: number
     chunkCount: number
   }> {
+    if (!this.rag) {
+      return {
+        documentCount: 0,
+        chunkCount: 0,
+      }
+    }
+
+    // Get stats from Mastra's vector store
+    const stats = await this.rag.getStats()
     return {
-      documentCount: 1,
-      chunkCount: this.documents.length,
+      documentCount: stats.documentCount || 0,
+      chunkCount: stats.chunkCount || 0,
     }
   }
 
@@ -284,7 +224,8 @@ Answer:`
    * Clear all indexed documents
    */
   clear(): void {
-    this.documents = []
-    this.indexed = false
+    if (this.rag) {
+      this.rag.clear()
+    }
   }
 }
