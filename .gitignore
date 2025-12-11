@@ -7,10 +7,31 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+.pnpm-store
+.pnpm-debug.log
+
+# Build outputs
 dist
 dist-ssr
+.next
+.turbo
+out
+build
 *.local
+
+# Turbo
+.turbo
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+!apps/web/.env.example
 
 # Editor directories and files
 .vscode/*
@@ -58,6 +79,14 @@ Desktop.ini
 sources/
 outputs/
 
+# PGlite data directory (local development database)
+pglite-data/
+*.db
+*.db-shm
+*.db-wal
+drizzle-sqlite/
+
 # Temporary and test files
 debug.*
 test.*
+*.bak
